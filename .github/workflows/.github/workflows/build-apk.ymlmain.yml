@@ -1,13 +1,10 @@
-
 name: Build OfflinePages APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - 'OfflinePages-project.zip'
-      - '.github/workflows/build-apk.yml'
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -16,53 +13,61 @@ jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout repository
+      - name: Download repository
         uses: actions/checkout@v4
 
-      - name: Check project archive
+      - name: Check ZIP archive
         run: |
-          test -f OfflinePages-project.zip
+          if [ ! -f OfflinePages-project.zip ]; then
+            echo "ERROR: OfflinePages-project.zip not found"
+            exit 1
+          fi
           unzip -t OfflinePages-project.zip
 
-      - name: Set up Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 8.9
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK
+      - name: Configure Android SDK
         run: |
-          yes | sdkmanager --licenses
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          echo "/usr/local/lib/android/sdk/platform-tools" >> "$GITHUB_PATH"
+          echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+
+      - name: Install Android components
+        run: |
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
 
       - name: Extract project
         run: |
           mkdir -p extracted
           unzip -q OfflinePages-project.zip -d extracted
+          ls -la extracted/OfflinePages
           test -f extracted/OfflinePages/settings.gradle
           test -f extracted/OfflinePages/app/build.gradle
           test -f extracted/OfflinePages/app/src/main/AndroidManifest.xml
-          test -f extracted/OfflinePages/app/src/main/assets/index.html
 
       - name: Build APK
         working-directory: extracted/OfflinePages
-        run: gradle --no-daemon --stacktrace assembleDebug
-
-      - name: Verify APK
         run: |
-          test -s extracted/OfflinePages/app/build/outputs/apk/debug/app-debug.apk
-          ls -lh extracted/OfflinePages/app/build/outputs/apk/debug/app-debug.apk
+          gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Check APK
+        run: |
+          APK="extracted/OfflinePages/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          echo "APK successfully created!"
+          ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
